@@ -1,3 +1,17 @@
 body {
     margin: 0;
 }
+
+.main {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.row {
+    margin: auto;
+    display: flex;
+    height: 1px;
+    background-color: red;
+}
