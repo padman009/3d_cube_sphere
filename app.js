@@ -89,7 +89,7 @@ function init() {
     if(radiusInp.value == '' || sizeInp.value == ''){
         return;
     }
-    radius = radiusInp.value + 0.5;
+    radius = radiusInp.value + '.5';
     size = sizeInp.value;
 
     changeCSSStyle('.row', 'height', size + 'px');
