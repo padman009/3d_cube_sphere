@@ -4,8 +4,8 @@ var sideSize = 0.5;
 var radius = 1000.5;
 var size = 1;
 var z = 500;
-
-init();
+var radiusInp = document.querySelector('#radius');
+var sizeInp = document.querySelector('#size');
 
 function getRandomColor() {
     const letters = "0123456789ABCDEF";
@@ -80,7 +80,19 @@ function constructCubCircleMap() {
     return cubCircleMap;
 }
 
+radiusInp.onchange = init;
+sizeInp.onchange = init;
+
+// init();
+
 function init() {
+    if(radiusInp.value == '' || sizeInp.value == ''){
+        return;
+    }
+    radius = radiusInp.value + 0.5;
+    size = sizeInp.value;
+
+    changeCSSStyle('.row', 'height', size + 'px');
 
     var cubCircleMap = constructCubCircleMap();
 
@@ -89,8 +101,8 @@ function init() {
 }
 
 function createFromDivs(cubCircleMap) {
-    let main = document.createElement('div');
-    main.className = 'main';
+    let main = document.querySelector('div.main');
+    main.innerHTML = '';
     for (let x = 0; x < cubCircleMap.length; x++) {
         let row = document.createElement('div');
         row.className = 'row';
@@ -106,7 +118,6 @@ function createFromDivs(cubCircleMap) {
         row.style.width = ((end - start + 1) * size) + 'px';
         main.appendChild(row);
     }
-    document.querySelector('body').appendChild(main);
 }
 
 function createInThreeJS(cubCircleMap){
@@ -173,4 +184,19 @@ function animate() {
     // console.log([mesh.rotation.x, mesh.rotation.y, mesh.rotation.z]);
 
     renderer.render(scene, camera);
+}
+
+
+var ssMain = 0;
+var cssRules = 'cssRules';
+
+function changeCSSStyle(selector, cssProp, cssVal) {
+
+  for (i=0, len=document.styleSheets[ssMain][cssRules].length; i<len; i++) {
+
+    if (document.styleSheets[ssMain][cssRules][i].selectorText === selector) {
+      document.styleSheets[ssMain][cssRules][i].style[cssProp] = cssVal;
+      return;
+    }
+  }
 }
