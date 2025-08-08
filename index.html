@@ -40,6 +40,34 @@
                     <option value="2">2x</option>
                 </select>
             </label>
+            <label class="control">
+                <span>Spacing</span>
+                <input id="spacing" type="range" min="0.5" max="2" step="0.05" value="0.9" aria-label="Cube spacing">
+            </label>
+            <label class="control">
+                <span>Cube size</span>
+                <input id="cubeSize" type="range" min="0.2" max="2" step="0.05" value="0.9" aria-label="Cube size">
+            </label>
+            <label class="control">
+                <span>Zoom max</span>
+                <input id="zoomMax" type="range" min="10" max="200" step="1" value="100" aria-label="Zoom maximum distance">
+            </label>
+            <label class="control">
+                <span>Zoom speed</span>
+                <input id="zoomSpeed" type="range" min="0.0001" max="0.005" step="0.0001" value="0.0008" aria-label="Zoom speed">
+            </label>
+            <label class="control">
+                <span>Damping</span>
+                <input id="damping" type="range" min="0" max="0.5" step="0.01" value="0.1" aria-label="Interaction damping">
+            </label>
+            <label class="control">
+                <span>FOV</span>
+                <input id="fov" type="range" min="30" max="120" step="1" value="70" aria-label="Camera field of view">
+            </label>
+            <label class="control">
+                <span>Duration</span>
+                <input id="duration" type="range" min="100" max="5000" step="50" value="1200" aria-label="Assembly animation duration (ms)">
+            </label>
             <button id="reset-camera" class="btn" type="button">Reset Camera</button>
             <button id="fullscreen" class="btn" type="button">Fullscreen</button>
         </div>
