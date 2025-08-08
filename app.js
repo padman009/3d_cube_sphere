@@ -6,7 +6,7 @@ var assemblyStart = 0;
 var assemblyDurationMs = 1200;
 var needsAssemblyUpdate = false;
 var cubeSize = 0.9;
-var spacing = 1.05;
+var spacing = 0.9;
 var instancedCapacity = 0;
 var currentRadiusCubes = 10;
 var _tempObject3D = new THREE.Object3D();
@@ -15,9 +15,13 @@ var rotationSpeed = 1;
 var stats = { last: performance.now(), frames: 0 };
 var pixelRatioMode = 'auto';
 var container = document.body;
+// New camera interaction tunables
+var zoomMin = 1.5;
+var zoomMax = 100;
+var zoomSpeed = 0.0008;
 
 function init() {
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 200);
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 1000);
   camera.position.set(2.5, 2.2, 5);
 
   scene = new THREE.Scene();
@@ -149,6 +153,7 @@ function setupControls() {
   if (reset) {
     reset.addEventListener('click', function () {
       var dist = Math.max(currentRadiusCubes * spacing * 3.0, 6);
+      dist = Math.max(zoomMin, Math.min(zoomMax, dist));
       var angleY = Math.PI / 3;
       var angleX = -Math.PI / 6;
       var offset = new THREE.Vector3().setFromSpherical(new THREE.Spherical(dist, angleY, angleX));
@@ -160,6 +165,88 @@ function setupControls() {
 
   var fs = document.getElementById('fullscreen');
   if (fs) fs.addEventListener('click', toggleFullscreen);
+
+  // New: spacing control
+  var spacingInput = document.getElementById('spacing');
+  if (spacingInput) {
+    spacingInput.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      if (isFinite(val) && val > 0.1) {
+        spacing = val;
+        // Recompute target positions with new spacing
+        setRadius(currentRadiusCubes);
+      }
+    });
+  }
+
+  // New: cube size control
+  var cubeSizeInput = document.getElementById('cubeSize');
+  if (cubeSizeInput) {
+    cubeSizeInput.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      if (isFinite(val) && val > 0.1) {
+        cubeSize = val;
+        updateCubeGeometry();
+      }
+    });
+  }
+
+  // New: zoom max control
+  var zoomMaxInput = document.getElementById('zoomMax');
+  if (zoomMaxInput) {
+    zoomMaxInput.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      if (isFinite(val) && val > zoomMin) {
+        zoomMax = val;
+        spherical.radius = Math.min(spherical.radius, zoomMax);
+      }
+    });
+  }
+
+  // New: zoom speed control
+  var zoomSpeedInput = document.getElementById('zoomSpeed');
+  if (zoomSpeedInput) {
+    zoomSpeedInput.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      if (isFinite(val) && val > 0) {
+        zoomSpeed = val;
+      }
+    });
+  }
+
+  // New: damping control
+  var dampingInput = document.getElementById('damping');
+  if (dampingInput) {
+    dampingInput.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      if (isFinite(val) && val >= 0 && val < 1) {
+        damping = val;
+      }
+    });
+  }
+
+  // New: FOV control
+  var fovInput = document.getElementById('fov');
+  if (fovInput) {
+    fovInput.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      if (isFinite(val) && val >= 30 && val <= 120) {
+        camera.fov = val;
+        camera.updateProjectionMatrix();
+      }
+    });
+  }
+
+  // New: assembly duration control
+  var durationInput = document.getElementById('duration');
+  if (durationInput) {
+    durationInput.addEventListener('input', function (e) {
+      var val = parseInt(e.target.value, 10);
+      if (isFinite(val) && val >= 100) {
+        assemblyDurationMs = val;
+      }
+    });
+  }
 }
 
 function toggleFullscreen() {
@@ -210,7 +297,7 @@ function setupInteraction() {
   canvas.addEventListener('wheel', function (e) {
     e.preventDefault();
     var delta = e.deltaY;
-    zoomVelocity += delta * 0.0008;
+    zoomVelocity += delta * zoomSpeed;
   }, { passive: false });
 
   // Smooth update loop tied to animation
@@ -231,7 +318,7 @@ function applyInteractionDamping() {
   spherical.phi = Math.max(minPhi, Math.min(maxPhi, spherical.phi));
 
   spherical.radius *= Math.exp(zoomVelocity);
-  spherical.radius = Math.max(2, Math.min(20, spherical.radius));
+  spherical.radius = Math.max(zoomMin, Math.min(zoomMax, spherical.radius));
 
   velocityTheta *= 1 - damping;
   velocityPhi *= 1 - damping;
@@ -314,7 +401,7 @@ function setRadius(radiusCubes) {
 
   // adjust camera distance if too close/far
   var desired = Math.max(currentRadiusCubes * spacing * 3.0, 6);
-  spherical.radius = Math.max(2, Math.min(40, desired));
+  spherical.radius = Math.max(zoomMin, Math.min(zoomMax, desired));
 }
 
 function easeInOutCubic(t) {
@@ -342,6 +429,16 @@ function updateAssemblyAnimation(now) {
     // Snap to targets and stop
     currentPositions = targetPositions.map(function (v) { return v.clone(); });
     needsAssemblyUpdate = false;
+  }
+}
+
+function updateCubeGeometry() {
+  if (geometry) geometry.dispose();
+  var newGeometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
+  geometry = newGeometry;
+  if (instancedMesh) {
+    instancedMesh.geometry = geometry;
+    instancedMesh.instanceMatrix.needsUpdate = true;
   }
 }
 
