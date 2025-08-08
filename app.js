@@ -79,10 +79,13 @@ function constructCubCircleMap() {
     return cubCircleMap;
 }
 
-radiusInp.onchange = init;
-sizeInp.onchange = init;
+var radiusInp = document.getElementById('radius');
+var sizeInp = document.getElementById('size');
+if (radiusInp) radiusInp.onchange = init;
+if (sizeInp) sizeInp.onchange = init;
 
-// init();
+init();
+animate();
 
 function init() {
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 20);
