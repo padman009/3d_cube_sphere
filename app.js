@@ -1,37 +1,223 @@
 var camera, scene, renderer;
 var geometry, material, mesh;
+var isAnimating = true;
+var rotationSpeed = 1;
+var stats = { last: performance.now(), frames: 0 };
+var pixelRatioMode = 'auto';
+var container = document.body;
 
 init();
 animate();
 
 function init() {
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 20);
+  camera.position.set(2.5, 2.2, 5);
 
-    camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 0.03, 20 );
-    camera.position.z = 5;
+  scene = new THREE.Scene();
 
-    scene = new THREE.Scene();
+  geometry = new THREE.BoxGeometry(1, 1, 1);
+  material = new THREE.MeshNormalMaterial();
 
-    geometry = new THREE.BoxGeometry( 1, 1, 1 );
-    material = new THREE.MeshNormalMaterial();
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
 
-    mesh = new THREE.Mesh( geometry, material );
-    scene.add( mesh );
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  updatePixelRatio();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if ('outputColorSpace' in renderer && THREE.SRGBColorSpace) {
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+  } else if ('outputEncoding' in renderer && THREE.sRGBEncoding) {
+    renderer.outputEncoding = THREE.sRGBEncoding;
+  }
 
-    renderer = new THREE.WebGLRenderer( { antialias: true } );
-    renderer.setSize( window.innerWidth, window.innerHeight );
+  container.appendChild(renderer.domElement);
 
-    document.body.appendChild( renderer.domElement );
+  // Interaction
+  setupInteraction();
+  // UI controls
+  setupControls();
+  // Resize
+  window.addEventListener('resize', onWindowResize, { passive: true });
+  // Fullscreen hint
+  window.addEventListener('dblclick', toggleFullscreen);
 
+  // WebGL context loss handling
+  renderer.domElement.addEventListener('webglcontextlost', function (e) {
+    e.preventDefault();
+    isAnimating = false;
+  });
+  renderer.domElement.addEventListener('webglcontextrestored', function () {
+    isAnimating = true;
+  });
 }
 
-function animate() {
+function updatePixelRatio() {
+  var ratio = window.devicePixelRatio || 1;
+  if (pixelRatioMode !== 'auto') {
+    ratio = parseFloat(pixelRatioMode) || 1;
+  } else {
+    // Cap pixel ratio for performance
+    ratio = Math.min(ratio, 2);
+  }
+  renderer.setPixelRatio(ratio);
+}
 
-    requestAnimationFrame( animate );
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
 
-    mesh.rotation.x += 0.01;
-    mesh.rotation.y += 0.02;
-    mesh.rotation.z += 0.03;
+function animate(now) {
+  requestAnimationFrame(animate);
 
-    renderer.render( scene, camera );
+  if (isAnimating) {
+    mesh.rotation.x += 0.01 * rotationSpeed;
+    mesh.rotation.y += 0.02 * rotationSpeed;
+    mesh.rotation.z += 0.03 * rotationSpeed;
+  }
 
+  renderer.render(scene, camera);
+  updateFps(now || performance.now());
+}
+
+function updateFps(now) {
+  stats.frames++;
+  var delta = now - stats.last;
+  if (delta >= 500) {
+    var fps = Math.round((stats.frames * 1000) / delta);
+    var fpsEl = document.getElementById('fps');
+    if (fpsEl) fpsEl.textContent = fps + ' fps';
+    stats.frames = 0;
+    stats.last = now;
+  }
+}
+
+function setupControls() {
+  var btn = document.getElementById('toggle-anim');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      isAnimating = !isAnimating;
+      btn.textContent = isAnimating ? 'Pause' : 'Play';
+      btn.setAttribute('aria-pressed', String(!isAnimating));
+    });
+  }
+
+  var speed = document.getElementById('speed');
+  if (speed) {
+    speed.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      rotationSpeed = isFinite(val) ? val : 1;
+    });
+  }
+
+  var wire = document.getElementById('wireframe');
+  if (wire) {
+    wire.addEventListener('change', function (e) {
+      material.wireframe = !!e.target.checked;
+    });
+  }
+
+  var pr = document.getElementById('pixelRatio');
+  if (pr) {
+    pr.addEventListener('change', function (e) {
+      var value = e.target.value;
+      pixelRatioMode = value === 'auto' ? 'auto' : value;
+      updatePixelRatio();
+    });
+  }
+
+  var reset = document.getElementById('reset-camera');
+  if (reset) {
+    reset.addEventListener('click', function () {
+      camera.position.set(2.5, 2.2, 5);
+      spherical.setFromVector3(new THREE.Vector3().subVectors(camera.position, target));
+      camera.lookAt(target);
+    });
+  }
+
+  var fs = document.getElementById('fullscreen');
+  if (fs) fs.addEventListener('click', toggleFullscreen);
+}
+
+function toggleFullscreen() {
+  var elem = renderer.domElement;
+  if (!document.fullscreenElement) {
+    if (elem.requestFullscreen) elem.requestFullscreen();
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+  }
+}
+
+// Lightweight orbit-like interaction
+var isPointerDown = false;
+var lastX = 0, lastY = 0;
+var spherical = new THREE.Spherical(7, Math.PI / 3, -Math.PI / 6);
+var target = new THREE.Vector3(0, 0, 0);
+var damping = 0.1;
+var velocityTheta = 0;
+var velocityPhi = 0;
+var zoomVelocity = 0;
+
+function setupInteraction() {
+  updateCameraFromSpherical();
+
+  var canvas = renderer.domElement;
+  canvas.style.touchAction = 'none';
+
+  canvas.addEventListener('pointerdown', function (e) {
+    isPointerDown = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!isPointerDown) return;
+    var dx = e.clientX - lastX;
+    var dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    var rotSpeed = 0.005;
+    velocityTheta -= dx * rotSpeed;
+    velocityPhi -= dy * rotSpeed;
+  });
+  canvas.addEventListener('pointerup', function (e) {
+    isPointerDown = false;
+    canvas.releasePointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var delta = e.deltaY;
+    zoomVelocity += delta * 0.0008;
+  }, { passive: false });
+
+  // Smooth update loop tied to animation
+  var originalRender = renderer.render.bind(renderer);
+  renderer.render = function (sc, cam) {
+    applyInteractionDamping();
+    updateCameraFromSpherical();
+    originalRender(sc, cam);
+  };
+}
+
+function applyInteractionDamping() {
+  spherical.theta += velocityTheta;
+  spherical.phi += velocityPhi;
+
+  var minPhi = 0.01;
+  var maxPhi = Math.PI - 0.01;
+  spherical.phi = Math.max(minPhi, Math.min(maxPhi, spherical.phi));
+
+  spherical.radius *= Math.exp(zoomVelocity);
+  spherical.radius = Math.max(2, Math.min(20, spherical.radius));
+
+  velocityTheta *= 1 - damping;
+  velocityPhi *= 1 - damping;
+  zoomVelocity *= 1 - damping;
+}
+
+function updateCameraFromSpherical() {
+  var offset = new THREE.Vector3().setFromSpherical(spherical);
+  camera.position.copy(target).add(offset);
+  camera.lookAt(target);
 }
