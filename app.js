@@ -84,9 +84,6 @@ var sizeInp = document.getElementById('size');
 if (radiusInp) radiusInp.onchange = init;
 if (sizeInp) sizeInp.onchange = init;
 
-init();
-animate();
-
 function init() {
   camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 20);
   camera.position.set(2.5, 2.2, 5);
@@ -298,4 +295,15 @@ function updateCameraFromSpherical() {
   var offset = new THREE.Vector3().setFromSpherical(spherical);
   camera.position.copy(target).add(offset);
   camera.lookAt(target);
+}
+
+// Start after DOM and all variables are ready
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', function () {
+    init();
+    animate();
+  });
+} else {
+  init();
+  animate();
 }
