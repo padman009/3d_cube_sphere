@@ -1,11 +1,10 @@
 var camera, scene, renderer;
 var geometry, material, mesh;
-var sideSize = 0.5;
-var radius = 1000.5;
-var size = 1;
-var z = 500;
-var radiusInp = document.querySelector('#radius');
-var sizeInp = document.querySelector('#size');
+var isAnimating = true;
+var rotationSpeed = 1;
+var stats = { last: performance.now(), frames: 0 };
+var pixelRatioMode = 'auto';
+var container = document.body;
 
 function getRandomColor() {
     const letters = "0123456789ABCDEF";
@@ -86,117 +85,214 @@ sizeInp.onchange = init;
 // init();
 
 function init() {
-    if(radiusInp.value == '' || sizeInp.value == ''){
-        return;
-    }
-    radius = radiusInp.value + '.5';
-    size = sizeInp.value;
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 20);
+  camera.position.set(2.5, 2.2, 5);
 
-    changeCSSStyle('.row', 'height', size + 'px');
+  scene = new THREE.Scene();
 
-    var cubCircleMap = constructCubCircleMap();
+  geometry = new THREE.BoxGeometry(1, 1, 1);
+  material = new THREE.MeshNormalMaterial();
 
-    createFromDivs(cubCircleMap);
-    // createInThreeJS(cubCircleMap);
-}
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
 
-function createFromDivs(cubCircleMap) {
-    let main = document.querySelector('div.main');
-    main.innerHTML = '';
-    for (let x = 0; x < cubCircleMap.length; x++) {
-        let row = document.createElement('div');
-        row.className = 'row';
-        let start = -1;
-        let end = cubCircleMap[x].length - 1;
-        do {
-            start++;
-        } while (!cubCircleMap[x][start])
-        end = start;
-        while (cubCircleMap[x][end]) {
-            end++;
-        }
-        row.style.width = ((end - start + 1) * size) + 'px';
-        main.appendChild(row);
-    }
-}
-
-function createInThreeJS(cubCircleMap){
-    camera = new THREE.PerspectiveCamera(
-        70,
-        window.innerWidth / window.innerHeight,
-        0.03,
-        2000
-    );
-    camera.position.z = z;
-
-    scene = new THREE.Scene();
-
-    let group = new THREE.Group();
-    for (let x = 0; x < cubCircleMap.length; x++) {
-        for (let y = 0; y < cubCircleMap[x].length; y++) {
-            if (!cubCircleMap[x][y]) {
-                continue;
-            }
-            geometry = new THREE.BoxGeometry(sideSize, sideSize, sideSize);
-            material = new THREE.MeshBasicMaterial({
-                color: getRandomColor(),
-                side: THREE.DoubleSide,
-            });
-
-            mesh = new THREE.Mesh(geometry, material);
-            mesh.position.x = (x - Math.floor(cubCircleMap.length / 2)) * sideSize;
-            mesh.position.y = (y - Math.floor(cubCircleMap[x].length / 2)) * sideSize;
-
-            group.add(mesh);
-        }
-    }
-
-    // let circle = new THREE.RingGeometry(
-    //     radius * sideSize,
-    //     radius * sideSize + 1,
-    //     32
-    // );
-    // let circleMaterial = new THREE.MeshBasicMaterial({
-    //     color: 0xffff00,
-    //     side: THREE.DoubleSide,
-    // });
-    // mesh = new THREE.Mesh(circle, circleMaterial);
-
-    // group.add(mesh);
-    scene.add(group);
-
-    group.rotation.z = -(Math.PI / 2);
-
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-
-    document.body.appendChild(renderer.domElement);
-
-    animate();
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-
-    // mesh.rotation.x = 0.75;
-    // mesh.rotation.y = 0.75;
-    // mesh.rotation.z = 0.75;
-    // console.log([mesh.rotation.x, mesh.rotation.y, mesh.rotation.z]);
-
-    renderer.render(scene, camera);
-}
-
-
-var ssMain = 0;
-var cssRules = 'cssRules';
-
-function changeCSSStyle(selector, cssProp, cssVal) {
-
-  for (i=0, len=document.styleSheets[ssMain][cssRules].length; i<len; i++) {
-
-    if (document.styleSheets[ssMain][cssRules][i].selectorText === selector) {
-      document.styleSheets[ssMain][cssRules][i].style[cssProp] = cssVal;
-      return;
-    }
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  updatePixelRatio();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  if ('outputColorSpace' in renderer && THREE.SRGBColorSpace) {
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+  } else if ('outputEncoding' in renderer && THREE.sRGBEncoding) {
+    renderer.outputEncoding = THREE.sRGBEncoding;
   }
+
+  container.appendChild(renderer.domElement);
+
+  // Interaction
+  setupInteraction();
+  // UI controls
+  setupControls();
+  // Resize
+  window.addEventListener('resize', onWindowResize, { passive: true });
+  // Fullscreen hint
+  window.addEventListener('dblclick', toggleFullscreen);
+
+  // WebGL context loss handling
+  renderer.domElement.addEventListener('webglcontextlost', function (e) {
+    e.preventDefault();
+    isAnimating = false;
+  });
+  renderer.domElement.addEventListener('webglcontextrestored', function () {
+    isAnimating = true;
+  });
+}
+
+function updatePixelRatio() {
+  var ratio = window.devicePixelRatio || 1;
+  if (pixelRatioMode !== 'auto') {
+    ratio = parseFloat(pixelRatioMode) || 1;
+  } else {
+    // Cap pixel ratio for performance
+    ratio = Math.min(ratio, 2);
+  }
+  renderer.setPixelRatio(ratio);
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate(now) {
+  requestAnimationFrame(animate);
+
+  if (isAnimating) {
+    mesh.rotation.x += 0.01 * rotationSpeed;
+    mesh.rotation.y += 0.02 * rotationSpeed;
+    mesh.rotation.z += 0.03 * rotationSpeed;
+  }
+
+  renderer.render(scene, camera);
+  updateFps(now || performance.now());
+}
+
+function updateFps(now) {
+  stats.frames++;
+  var delta = now - stats.last;
+  if (delta >= 500) {
+    var fps = Math.round((stats.frames * 1000) / delta);
+    var fpsEl = document.getElementById('fps');
+    if (fpsEl) fpsEl.textContent = fps + ' fps';
+    stats.frames = 0;
+    stats.last = now;
+  }
+}
+
+function setupControls() {
+  var btn = document.getElementById('toggle-anim');
+  if (btn) {
+    btn.addEventListener('click', function () {
+      isAnimating = !isAnimating;
+      btn.textContent = isAnimating ? 'Pause' : 'Play';
+      btn.setAttribute('aria-pressed', String(!isAnimating));
+    });
+  }
+
+  var speed = document.getElementById('speed');
+  if (speed) {
+    speed.addEventListener('input', function (e) {
+      var val = parseFloat(e.target.value);
+      rotationSpeed = isFinite(val) ? val : 1;
+    });
+  }
+
+  var wire = document.getElementById('wireframe');
+  if (wire) {
+    wire.addEventListener('change', function (e) {
+      material.wireframe = !!e.target.checked;
+    });
+  }
+
+  var pr = document.getElementById('pixelRatio');
+  if (pr) {
+    pr.addEventListener('change', function (e) {
+      var value = e.target.value;
+      pixelRatioMode = value === 'auto' ? 'auto' : value;
+      updatePixelRatio();
+    });
+  }
+
+  var reset = document.getElementById('reset-camera');
+  if (reset) {
+    reset.addEventListener('click', function () {
+      camera.position.set(2.5, 2.2, 5);
+      spherical.setFromVector3(new THREE.Vector3().subVectors(camera.position, target));
+      camera.lookAt(target);
+    });
+  }
+
+  var fs = document.getElementById('fullscreen');
+  if (fs) fs.addEventListener('click', toggleFullscreen);
+}
+
+function toggleFullscreen() {
+  var elem = renderer.domElement;
+  if (!document.fullscreenElement) {
+    if (elem.requestFullscreen) elem.requestFullscreen();
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+  }
+}
+
+// Lightweight orbit-like interaction
+var isPointerDown = false;
+var lastX = 0, lastY = 0;
+var spherical = new THREE.Spherical(7, Math.PI / 3, -Math.PI / 6);
+var target = new THREE.Vector3(0, 0, 0);
+var damping = 0.1;
+var velocityTheta = 0;
+var velocityPhi = 0;
+var zoomVelocity = 0;
+
+function setupInteraction() {
+  updateCameraFromSpherical();
+
+  var canvas = renderer.domElement;
+  canvas.style.touchAction = 'none';
+
+  canvas.addEventListener('pointerdown', function (e) {
+    isPointerDown = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    canvas.setPointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!isPointerDown) return;
+    var dx = e.clientX - lastX;
+    var dy = e.clientY - lastY;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    var rotSpeed = 0.005;
+    velocityTheta -= dx * rotSpeed;
+    velocityPhi -= dy * rotSpeed;
+  });
+  canvas.addEventListener('pointerup', function (e) {
+    isPointerDown = false;
+    canvas.releasePointerCapture(e.pointerId);
+  });
+  canvas.addEventListener('wheel', function (e) {
+    e.preventDefault();
+    var delta = e.deltaY;
+    zoomVelocity += delta * 0.0008;
+  }, { passive: false });
+
+  // Smooth update loop tied to animation
+  var originalRender = renderer.render.bind(renderer);
+  renderer.render = function (sc, cam) {
+    applyInteractionDamping();
+    updateCameraFromSpherical();
+    originalRender(sc, cam);
+  };
+}
+
+function applyInteractionDamping() {
+  spherical.theta += velocityTheta;
+  spherical.phi += velocityPhi;
+
+  var minPhi = 0.01;
+  var maxPhi = Math.PI - 0.01;
+  spherical.phi = Math.max(minPhi, Math.min(maxPhi, spherical.phi));
+
+  spherical.radius *= Math.exp(zoomVelocity);
+  spherical.radius = Math.max(2, Math.min(20, spherical.radius));
+
+  velocityTheta *= 1 - damping;
+  velocityPhi *= 1 - damping;
+  zoomVelocity *= 1 - damping;
+}
+
+function updateCameraFromSpherical() {
+  var offset = new THREE.Vector3().setFromSpherical(spherical);
+  camera.position.copy(target).add(offset);
+  camera.lookAt(target);
 }
