@@ -1,100 +1,34 @@
 var camera, scene, renderer;
-var geometry, material, mesh;
+var geometry, material, instancedMesh, rootGroup;
+var targetPositions = [];
+var currentPositions = [];
+var assemblyStart = 0;
+var assemblyDurationMs = 1200;
+var needsAssemblyUpdate = false;
+var cubeSize = 0.9;
+var spacing = 1.05;
+var instancedCapacity = 0;
+var currentRadiusCubes = 10;
+var _tempObject3D = new THREE.Object3D();
 var isAnimating = true;
 var rotationSpeed = 1;
 var stats = { last: performance.now(), frames: 0 };
 var pixelRatioMode = 'auto';
 var container = document.body;
 
-function getRandomColor() {
-    const letters = "0123456789ABCDEF";
-    let color = "#";
-    for (let i = 0; i < 6; i++) {
-        color += letters[Math.floor(Math.random() * 16)];
-    }
-    // return color;
-    return '#F00000';
-}
-
-function constructCubCircleMap() {
-    var cubCircleMap = Array(radius * 2)
-        .fill()
-        .map(() => Array(radius * 2).fill(0));
-
-    // console.info(
-    //     sideSize / 2,
-    //     Math.pow(radius, 2)
-    // );
-
-    let centralCell = Math.ceil(radius) -1;
-    console.log(centralCell)
-
-    for (let x = 0; x < cubCircleMap.length; x++) {
-        // console.log(
-        //     x,
-        //     Math.abs(centralCell - x),
-        //     Math.pow(Math.abs(centralCell - x), 2),
-        //     Math.pow(centralCell, 2) - Math.pow(Math.abs(centralCell - x), 2)
-        // );
-
-        let horda = Math.sqrt(
-            Math.pow(centralCell, 2) -
-                Math.pow(Math.abs(centralCell - x), 2)
-        );
-
-        // console.log("\t" + horda);
-        horda += horda === Math.ceil(horda) ?0.1:0;
-        
-        for (let y = 0; y < cubCircleMap[x].length; y++) {
-            if (
-                // x == centralCell ||
-                // y == centralCell ||
-                Math.abs(Math.abs(y - centralCell) - horda) -
-                    Math.abs(Math.abs(y - centralCell) - Math.ceil(horda)) <
-                    0
-            ) {
-                cubCircleMap[y][x] = 1;
-            }
-
-            // console.log([
-            //     x,
-            //     y,
-            //     cubCircleMap[x][y],
-            //     Math.abs(y - radius),
-            //     Math.abs(Math.abs(y - radius) - horda),
-            //     Math.ceil(horda),
-            //     Math.abs(Math.abs(y - radius) - Math.ceil(horda)),
-            //     Math.abs(Math.abs(y - radius) - horda) -
-            //         Math.abs(Math.abs(y - radius) - Math.ceil(horda)),
-            // ]);
-        }
-    }
-    // console.log('');
-    // console.log(cubCircleMap.length);
-    // cubCircleMap.forEach((element, index) => {
-    //     console.log(index)
-    //     console.log(element)
-    // });
-
-    return cubCircleMap;
-}
-
-var radiusInp = document.getElementById('radius');
-var sizeInp = document.getElementById('size');
-if (radiusInp) radiusInp.onchange = init;
-if (sizeInp) sizeInp.onchange = init;
-
 function init() {
-  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 20);
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.03, 200);
   camera.position.set(2.5, 2.2, 5);
 
   scene = new THREE.Scene();
 
-  geometry = new THREE.BoxGeometry(1, 1, 1);
+  geometry = new THREE.BoxGeometry(cubeSize, cubeSize, cubeSize);
   material = new THREE.MeshNormalMaterial();
-
-  mesh = new THREE.Mesh(geometry, material);
-  scene.add(mesh);
+  rootGroup = new THREE.Group();
+  scene.add(rootGroup);
+  var radiusSlider = document.getElementById('sphereRadius');
+  var initialRadius = radiusSlider ? parseInt(radiusSlider.value, 10) || 10 : 10;
+  setRadius(initialRadius);
 
   renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   updatePixelRatio();
@@ -146,10 +80,10 @@ function onWindowResize() {
 function animate(now) {
   requestAnimationFrame(animate);
 
-  if (isAnimating) {
-    mesh.rotation.x += 0.01 * rotationSpeed;
-    mesh.rotation.y += 0.02 * rotationSpeed;
-    mesh.rotation.z += 0.03 * rotationSpeed;
+  updateAssemblyAnimation(now || performance.now());
+  if (rootGroup && isAnimating) {
+    rootGroup.rotation.y += 0.01 * rotationSpeed;
+    rootGroup.rotation.x += 0.005 * rotationSpeed;
   }
 
   renderer.render(scene, camera);
@@ -202,10 +136,23 @@ function setupControls() {
     });
   }
 
+  var radiusSlider = document.getElementById('sphereRadius');
+  if (radiusSlider) {
+    radiusSlider.addEventListener('input', function (e) {
+      var r = parseInt(e.target.value, 10);
+      if (!isFinite(r)) r = 10;
+      setRadius(r);
+    });
+  }
+
   var reset = document.getElementById('reset-camera');
   if (reset) {
     reset.addEventListener('click', function () {
-      camera.position.set(2.5, 2.2, 5);
+      var dist = Math.max(currentRadiusCubes * spacing * 3.0, 6);
+      var angleY = Math.PI / 3;
+      var angleX = -Math.PI / 6;
+      var offset = new THREE.Vector3().setFromSpherical(new THREE.Spherical(dist, angleY, angleX));
+      camera.position.copy(offset);
       spherical.setFromVector3(new THREE.Vector3().subVectors(camera.position, target));
       camera.lookAt(target);
     });
@@ -295,6 +242,107 @@ function updateCameraFromSpherical() {
   var offset = new THREE.Vector3().setFromSpherical(spherical);
   camera.position.copy(target).add(offset);
   camera.lookAt(target);
+}
+
+// Cube sphere generation and animation
+function generateSpherePositions(radiusCubes) {
+  var positions = [];
+  var shell = radiusCubes <= 3 ? 0.9 : 0.6; // a bit thicker shell for small radii
+  for (var x = -radiusCubes; x <= radiusCubes; x++) {
+    for (var y = -radiusCubes; y <= radiusCubes; y++) {
+      for (var z = -radiusCubes; z <= radiusCubes; z++) {
+        var d = Math.sqrt(x * x + y * y + z * z);
+        if (Math.abs(d - radiusCubes) <= shell) {
+          positions.push(new THREE.Vector3(x * spacing, y * spacing, z * spacing));
+        }
+      }
+    }
+  }
+  return positions;
+}
+
+function ensureInstancedCapacity(required) {
+  if (!instancedMesh || required > instancedCapacity) {
+    if (instancedMesh) {
+      rootGroup.remove(instancedMesh);
+    }
+    instancedCapacity = required;
+    instancedMesh = new THREE.InstancedMesh(geometry, material, instancedCapacity);
+    instancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    rootGroup.add(instancedMesh);
+  }
+  instancedMesh.count = required;
+}
+
+function randomScatterPosition(radiusCubes) {
+  var R = (radiusCubes + 8) * spacing;
+  var u = Math.random();
+  var v = Math.random();
+  var theta = 2 * Math.PI * u;
+  var phi = Math.acos(2 * v - 1);
+  var r = R * (1.0 + Math.random() * 0.5);
+  var x = r * Math.sin(phi) * Math.cos(theta);
+  var y = r * Math.sin(phi) * Math.sin(theta);
+  var z = r * Math.cos(phi);
+  return new THREE.Vector3(x, y, z);
+}
+
+function setRadius(radiusCubes) {
+  currentRadiusCubes = Math.max(2, Math.floor(radiusCubes));
+  var newTargets = generateSpherePositions(currentRadiusCubes);
+  ensureInstancedCapacity(newTargets.length);
+
+  var oldCount = currentPositions.length;
+  var newCount = newTargets.length;
+  var common = Math.min(oldCount, newCount);
+
+  var newFrom = new Array(newCount);
+  for (var i = 0; i < common; i++) {
+    newFrom[i] = currentPositions[i].clone();
+  }
+  for (var j = common; j < newCount; j++) {
+    newFrom[j] = randomScatterPosition(currentRadiusCubes);
+  }
+
+  currentPositions = newFrom;
+  targetPositions = newTargets;
+  assemblyStart = performance.now();
+  needsAssemblyUpdate = true;
+
+  var chip = document.getElementById('cubeCount');
+  if (chip) chip.textContent = 'Cubes: ' + String(newCount);
+
+  // adjust camera distance if too close/far
+  var desired = Math.max(currentRadiusCubes * spacing * 3.0, 6);
+  spherical.radius = Math.max(2, Math.min(40, desired));
+}
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function updateAssemblyAnimation(now) {
+  if (!instancedMesh || !needsAssemblyUpdate) return;
+  var t = Math.min(1, (now - assemblyStart) / assemblyDurationMs);
+  var e = easeInOutCubic(t);
+  for (var i = 0; i < instancedMesh.count; i++) {
+    var from = currentPositions[i] || new THREE.Vector3();
+    var to = targetPositions[i] || new THREE.Vector3();
+    _tempObject3D.position.set(
+      from.x + (to.x - from.x) * e,
+      from.y + (to.y - from.y) * e,
+      from.z + (to.z - from.z) * e
+    );
+    _tempObject3D.rotation.set(0, 0, 0);
+    _tempObject3D.updateMatrix();
+    instancedMesh.setMatrixAt(i, _tempObject3D.matrix);
+  }
+  instancedMesh.instanceMatrix.needsUpdate = true;
+  if (t === 1) {
+    // Snap to targets and stop
+    currentPositions = targetPositions.map(function (v) { return v.clone(); });
+    needsAssemblyUpdate = false;
+  }
 }
 
 // Start after DOM and all variables are ready

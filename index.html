@@ -16,11 +16,16 @@
 
     <div id="hud" aria-live="polite" aria-label="Performance and controls">
         <div id="fps" class="chip" title="Frames per second">-- fps</div>
+        <div id="cubeCount" class="chip" title="Number of cubes">Cubes: --</div>
         <div id="controls" class="panel" role="toolbar" aria-label="3D controls">
             <button id="toggle-anim" class="btn" type="button" aria-pressed="false">Pause</button>
             <label class="control">
                 <span>Speed</span>
                 <input id="speed" type="range" min="0" max="3" step="0.05" value="1" aria-label="Rotation speed">
+            </label>
+            <label class="control">
+                <span>Radius</span>
+                <input id="sphereRadius" type="range" min="2" max="24" step="1" value="10" aria-label="Sphere radius (in cubes)">
             </label>
             <label class="control">
                 <input id="wireframe" type="checkbox" aria-label="Toggle wireframe">
